@@ -1,0 +1,271 @@
+﻿Option Explicit
+'Script written by Elizabeth Nenniger & Laura Austin
+'Script copyrighted
+'Script version October 13, 2011
+Randomize
+Call Main()
+
+
+Sub Main()
+	'Calls all functions to create a random recursive geometry, using cylinders and ellipsoids
+
+	
+	Dim arrStart : arrStart = Array(0.0, 0.0, 0.0)
+	'Starting point of recursive growth shape, @ origin
+	
+	Dim arrVector : arrVector = Array(1, 1, 0)
+	'A starter direction vector, (to be altered in recursive growth function with each iteration)
+	
+	Dim arrProp(7)
+	'Array to hold properties of recursive growth
+	
+	arrProp(0) = Null
+	'min twig per branch, to be assigned depending on generation number
+	
+	arrProp(1) = Null
+	'max twig per branch, to be assigned depending on generation number
+	
+	arrProp(2) = 5
+	'number of generations, hardcoded as 5 to keep a reasonable length of time for rendering
+	
+	arrProp(3) = 10.0
+	'max twig length, alters as each new line is drawn
+	
+	arrProp(4) = 0.5
+	'length mutation per generation
+	
+	arrProp(5) = 360
+	'max twig angle, line can be drawn in any direction
+	
+	arrProp(6) = 5
+	'twig angle mutation per generation
+	
+	Call RecursiveGrowth(arrStart, arrVector, arrProp, 1)
+	'Calls the recursiveGrowth function giving:
+	'a start point 
+	'a direction 
+	'an array that holds the limiting values 
+	'the generation counter (starting at 1)
+	
+End Sub
+
+
+Function RecursiveGrowth(ByVal ptStart, ByVal vecDir, ByVal Props(), ByVal Generation)
+	'Function that calls itself
+	
+	If Generation > Props(2) Then 
+		Exit Function
+		'The parameter that stops the function, once max generations is greater than 5, the function stops
+		
+	ElseIf Generation = 1 Then 
+		Props(0) = 10
+		Props(1) = 15
+		'If the generation is the first, the max amount of  lines to be drawn are between 10-15 
+		
+	ElseIf Generation > 4 Then
+		Props(0) = 0
+		Props(1) = 3
+		'If the generation is the last, the max amount of lines to be drawn are between 0-3
+	Else 
+		Props(0) = 0
+		Props(1) = 5
+		'For all other cases the amount of lines are to be between 0-5
+	End If
+	
+	Dim ptGrow, vecGrow, newTwig, newCyl
+	'Assigns new variables to store future modifed values
+	
+	Dim newProps : newProps = Props
+	'duplicates the properties array, and stores it in newProps
+	
+	newProps(3) = Props(3) * Props(4)
+	'new max twig length is max twig length * length mutation
+	
+	newProps(5) = Props(5) * Props(6)
+	'max angle is 360
+	
+	If newProps(5) > 360 Then newProps(5) = 360
+	'max angle is 360
+	
+	Dim N, maxN
+	'Dimensions new variables that will define the max and min number of sparks per twig
+	
+	maxN = CInt(Props(0) + Rnd() * (Props(1) - Props(0)))
+	'Assigns maxN a random integer value between min-max range, specified in Props Array
+	
+	
+	If maxN = 0 Then 
+		Call Rhino.AddSphere(ptStart, (0.6 - (0.1 * Generation)))
+		'Draws a sphere at a leaf that isn't a fifth generation
+		
+	End If
+
+	
+	For N = 1 To maxN
+		'Creates an iterative loop, that finishes when maxN is reached at a parent
+		
+		ptGrow = RandomPointInCone(ptStart, vecDir, 0.6 * Props(3), Props(3), Props(5))
+		'Calls the RandomPointInCone function, adapted from RhinoScript 101, to determine a new random direction for the next line
+		'Returns a new point
+		
+		newTwig = Rhino.AddLine(ptStart, ptGrow)
+		'Draws a line between the start point and end point and stores its object ID in a new variable.
+		
+		newCyl = Rhino.AddCylinder(ptStart, ptGrow, 0.02)
+		'Draws a cylinder between the start point and end point and stores its object ID in a new variable.
+		'ReDim Preserve arrLines(N)
+		'arrLines(N) = newtwig
+		'Call objectTracker(newTwig, Generation)
+		
+		Call SendToLayer(newTwig, newCyl, Generation)
+		'Sorts the lines and cylinders into layers by generation
+	
+		If Generation = 5 Then
+			'For leaves, call drawEllipsoids
+			
+			Call drawEllipsoids(ptGrow, ptStart, maxN)
+			
+			
+			
+		End If
+		
+		If Not IsNull(newTwig) Then
+			vecGrow = Rhino.CurveTangent(newTwig, Rhino.CurveDomain(newTwig)(1))
+			Call RecursiveGrowth(ptGrow, vecGrow, newProps, Generation + 1)		
+		
+		End If
+		
+	Next
+	
+
+End Function
+
+
+Function drawEllipsoids(ptGrow, ptStart, maxN)
+	'Function to draw, scale, rotate and align ellipsoids at leaves
+	
+	Dim newLine, ptRef, sphere, arrRef, arrTar, cone, ellipsoid
+	
+	newLine = Rhino.AddLine(Array(0, 0, 0), Array(0, 0, 5))
+	'Draws a vertical line at the origin
+	
+	Call Rhino.MoveObject(newLine, Array(0, 0, 0), ptStart)
+	'Moves line to leaf position
+	
+	ptRef = Rhino.CurveEndPoint(newLine)
+	'Stores end point for later reference
+
+	arrRef = Array(ptGrow, ptRef)
+	'Creates an array of points
+			
+	arrTar = Array(ptGrow, ptStart)
+	'Creates an array of points
+
+	sphere = Rhino.AddSphere(ptGrow, (0.4 - maxN / 15))
+	'Draws sphere, using a radius based on how many leaves per branch
+					
+	Call Rhino.ScaleObject(sphere, ptGrow, Array(0.5, 0.5, 1))
+	'Draws a sphere and turns sphere into an ellipsoid
+			
+	ellipsoid = Rhino.OrientObject(sphere, arrRef, arrTar)
+	'Orients along line axis
+			
+	Call Rhino.DeleteObject(newLine)
+	'Delete reference line
+			
+	cone = Rhino.AddCone(ptGrow, ptStart, ((0.4 - maxN / 15) / 2))
+	'Draws a cone, with same radius as ellipsoid 
+	
+	'Below sends cones & ellipsoids to their own layer
+	Dim strLayer, strLayer2
+	strLayer = "Cones"
+	strLayer2 = "Ellipsoids"
+	
+	If Not Rhino.IsLayer(strLayer) Or Rhino.IsLayer(strLayer2) Then
+		Call Rhino.AddLayer(strLayer)
+		Call Rhino.AddLayer(strLayer2)
+	End If
+	
+	Call Rhino.ObjectLayer(cone, strLayer)
+	Call Rhino.ObjectLayer(ellipsoid, strLayer2)
+	
+			
+End Function
+
+
+Function RandomPointInCone(ByVal Origin, ByVal vecDirection, ByVal MinDistance, ByVal MaxDistance, ByVal MaxAngle)
+	'Draws a line in a random direction
+	Dim vecTwig
+	
+	vecTwig = Rhino.VectorUnitize(vecDirection)
+	'Takes vector and extracts direction, changing length to a unit of 1
+	
+	vecTwig = Rhino.VectorScale(vecTwig, MinDistance + Rnd() * (MaxDistance - MinDistance))
+	'Rescales the direction vector into the appropriate range between the min-max value
+	
+	Dim MutationPlane
+	
+	MutationPlane = Rhino.PlaneFromNormal(Array(0, 0, 0), vecTwig)
+	'Finds the plane that is perpendicular to the vector and stores it in a variable
+	
+	vecTwig = Rhino.VectorRotate(vecTwig, Rnd() * maxAngle, MutationPlane(1))
+	'Rotates vector direction in x axis
+	
+	vecTwig = Rhino.VectorRotate(vecTwig, Rnd() * 360, vecDirection)
+	'Rotates it again to make the rotation three dimensional
+	
+	RandomPointInCone = Rhino.PointAdd(Origin, vecTwig)
+	'Returns the new point
+End Function
+
+
+Function SendToLayer(strLineID, strShapeID, intGen)
+	'Sorts the lines & cylinders into layers based on their generation
+	
+	Dim strLayerName
+	Dim lngColor
+	
+	Select Case intGen
+		'Based on Generation,  it will assign the variables a value accordingly
+		Case 1
+			strLayerName = "Generation 1"
+			lngColor = RGB(0, 215, 255)
+		Case 2
+			strLayerName = "Generation 2"
+			lngColor = RGB(0, 137, 255)
+		Case 3
+			strLayerName = "Generation 3"
+			lngColor = RGB(0, 45, 255)
+		Case 4
+			strLayerName = "Generation 4"
+			lngColor = RGB(80, 0, 255)
+		Case 5
+			strLayerName = "Generation 5"
+			lngColor = RGB(160, 0, 255)
+		Case Else
+			
+	End Select
+	
+	If Not Rhino.IsLayer(strLayerName) Then
+		'Creates the layers and colours them if they do not already exist
+		
+		Call Rhino.AddLayer(strLayerName)
+		Call Rhino.LayerColor(strLayerName, lngColor)
+		
+	End If
+	
+	'Moves both the lines and cylinders to the appropriate layer, based on generation
+	Call Rhino.ObjectLayer(strLineID, strLayerName)
+	Call Rhino.ObjectLayer(strShapeID, strLayerName)
+		
+End Function
+
+
+Function Render()
+	'Function to Render at Random Points in Code
+	
+	Rhino.command "render"
+	Rhino.Command "_-SaveRenderWindowAs"
+	Rhino.Command "_-CloseRenderWindow"
+	
+End Function
